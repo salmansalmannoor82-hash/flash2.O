@@ -17,6 +17,7 @@
         android:icon="@mipmap/ic_launcher"
         android:label="Flash 2.0"
         android:theme="@android:style/Theme.Material.NoActionBar">
+
         <activity
             android:name=".MainActivity"
             android:exported="true">
@@ -25,5 +26,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-    </application>
-</manifest>
+
+        <service
+            android:name=".service.Flash
