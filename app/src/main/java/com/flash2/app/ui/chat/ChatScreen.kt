@@ -1,5 +1,9 @@
 package com.flash2.app.ui.chat
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -25,6 +29,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
@@ -38,7 +43,6 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -47,27 +51,36 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.flash2.app.assistant.AssistantController
+import com.flash2.app.assistant.ChatMessage
 import com.flash2.app.ui.theme.Neon
 import kotlinx.coroutines.launch
 
-data class ChatMessage(val text: String, val fromUser: Boolean)
-
 @Composable
-fun ChatScreen() {
+fun ChatScreen(controller: AssistantController) {
+    val context = LocalContext.current
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
-    val messages = remember {
-        mutableStateListOf(
-            ChatMessage("Salaam! Main aapka assistant hoon. Kuch poochiye.", false)
-        )
-    }
+    val messages = controller.messages
     var input by remember { mutableStateOf("") }
-    var advanced by remember { mutableStateOf(false) }
-    var femaleVoice by remember { mutableStateOf(true) }
+
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) controller.toggleMic()
+        else controller.say("Mic chalane ke liye permission chahiye.", speak = false)
+    }
+
+    val onMic = {
+        val ok = context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+        if (ok) controller.toggleMic() else launcher.launch(Manifest.permission.RECORD_AUDIO)
+    }
 
     val t by rememberInfiniteTransition(label = "title").animateFloat(
         initialValue = 0f,
@@ -91,26 +104,30 @@ fun ChatScreen() {
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Advanced mode", color = Color.White, modifier = Modifier.weight(1f))
-                        Switch(checked = advanced, onCheckedChange = { advanced = it })
+                        Switch(
+                            checked = controller.advancedMode,
+                            onCheckedChange = { controller.advancedMode = it }
+                        )
                     }
                     Text(
-                        text = if (advanced) "Advanced: poora phone control" else "Simple: safe mode",
+                        text = if (controller.advancedMode) "Advanced: poora phone control" else "Simple: safe mode",
                         color = Color(0xFF9FB0D0),
                         fontSize = 12.sp
                     )
 
                     Spacer(Modifier.height(24.dp))
+                    SetupPanel()
                     Text("Awaaz", color = Color.White)
                     Spacer(Modifier.height(8.dp))
                     Row {
-                        if (femaleVoice) {
-                            Button(onClick = { femaleVoice = true }) { Text("Female") }
+                        if (controller.femaleVoice) {
+                            Button(onClick = { controller.setFemale(true) }) { Text("Female") }
                             Spacer(Modifier.width(8.dp))
-                            OutlinedButton(onClick = { femaleVoice = false }) { Text("Male") }
+                            OutlinedButton(onClick = { controller.setFemale(false) }) { Text("Male") }
                         } else {
-                            OutlinedButton(onClick = { femaleVoice = true }) { Text("Female") }
+                            OutlinedButton(onClick = { controller.setFemale(true) }) { Text("Female") }
                             Spacer(Modifier.width(8.dp))
-                            Button(onClick = { femaleVoice = false }) { Text("Male") }
+                            Button(onClick = { controller.setFemale(false) }) { Text("Male") }
                         }
                     }
                 }
@@ -148,6 +165,14 @@ fun ChatScreen() {
                     items(messages) { m -> MessageBubble(m) }
                 }
 
+                if (controller.listening) {
+                    Text(
+                        text = "🎙 Sun rahi hoon...",
+                        color = Neon.Cyan,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                }
+
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -164,18 +189,27 @@ fun ChatScreen() {
                         onClick = {
                             val text = input.trim()
                             if (text.isEmpty()) {
-                                messages.add(ChatMessage("Mic jald aa raha hai (voice wale part mein).", false))
+                                onMic()
                             } else {
-                                messages.add(ChatMessage(text, true))
-                                messages.add(ChatMessage("AI abhi connect nahi hai, jald hoga.", false))
+                                controller.handleText(text)
                                 input = ""
                             }
                         },
                         shape = CircleShape,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (controller.listening) Neon.Pink else Neon.Cyan
+                        ),
                         contentPadding = PaddingValues(0.dp),
                         modifier = Modifier.size(52.dp)
                     ) {
-                        Text(if (input.isBlank()) "🎤" else "➤", fontSize = 20.sp)
+                        Text(
+                            text = when {
+                                input.isNotBlank() -> "➤"
+                                controller.listening -> "⏹"
+                                else -> "🎤"
+                            },
+                            fontSize = 20.sp
+                        )
                     }
                 }
             }
